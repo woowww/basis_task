@@ -10,6 +10,12 @@ class PaymentRepository(Protocol):
 
     async def get(self, payment_id: uuid.UUID) -> Payment | None: ...
 
+    async def get_for_update(self, payment_id: uuid.UUID) -> Payment | None:
+        """Прочитать платёж и заблокировать строку до конца транзакции (ждёт чужую блокировку)."""
+
+    async def save(self, payment: Payment) -> None:
+        """Сохранить изменяемое состояние: статус, даты обработки и доставки webhook."""
+
     async def get_by_idempotency_key(self, idempotency_key: str) -> Payment | None: ...
 
 

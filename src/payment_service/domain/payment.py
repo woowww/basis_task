@@ -70,6 +70,26 @@ class Payment:
             updated_at=now,
         )
 
+    def complete(self, outcome: PaymentStatus, at: datetime) -> None:
+        """Зафиксировать итог обработки шлюзом (pending → succeeded|failed)."""
+        if self.status.is_final:
+            msg = f"Payment {self.id} is already {self.status}"
+            raise ValueError(msg)
+        if not outcome.is_final:
+            msg = f"Processing outcome must be final, got {outcome}"
+            raise ValueError(msg)
+        self.status = outcome
+        self.processed_at = at
+        self.updated_at = at
+
+    def mark_webhook_delivered(self, at: datetime) -> None:
+        self.webhook_delivered_at = at
+        self.updated_at = at
+
+    @property
+    def needs_webhook(self) -> bool:
+        return self.status.is_final and self.webhook_delivered_at is None
+
 
 PAYMENT_CREATED_EVENT = "payments.new"
 

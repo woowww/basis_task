@@ -5,7 +5,7 @@ from faststream import FastStream
 from httpx import ASGITransport, AsyncClient
 
 from payment_service.api.app import create_app as create_api
-from payment_service.consumer.main import create_app as create_consumer
+from payment_service.consumer.main import create_consumer
 from tests.helpers import make_settings
 
 
@@ -20,4 +20,4 @@ async def test_api_app_serves_openapi() -> None:
 
 
 def test_consumer_app_builds() -> None:
-    assert isinstance(create_consumer(make_settings()), FastStream)
+    assert isinstance(create_consumer(make_settings()).app, FastStream)

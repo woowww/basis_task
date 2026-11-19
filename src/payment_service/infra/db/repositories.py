@@ -59,6 +59,27 @@ class SqlPaymentRepository:
         row = await self._session.get(PaymentModel, payment_id)
         return _to_entity(row) if row is not None else None
 
+    async def get_for_update(self, payment_id: uuid.UUID) -> Payment | None:
+        row = await self._session.scalar(
+            select(PaymentModel)
+            .where(PaymentModel.id == payment_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return _to_entity(row) if row is not None else None
+
+    async def save(self, payment: Payment) -> None:
+        await self._session.execute(
+            update(PaymentModel)
+            .where(PaymentModel.id == payment.id)
+            .values(
+                status=payment.status,
+                processed_at=payment.processed_at,
+                webhook_delivered_at=payment.webhook_delivered_at,
+                updated_at=payment.updated_at,
+            )
+        )
+
     async def get_by_idempotency_key(self, idempotency_key: str) -> Payment | None:
         row = await self._session.scalar(
             select(PaymentModel).where(PaymentModel.idempotency_key == idempotency_key)
