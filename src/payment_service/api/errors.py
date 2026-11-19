@@ -11,11 +11,16 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from payment_service.application.errors import ApplicationError, IdempotencyConflictError
+from payment_service.application.errors import (
+    ApplicationError,
+    IdempotencyConflictError,
+    PaymentNotFoundError,
+)
 
 # Прикладная ошибка → (HTTP-статус, код ошибки).
 APPLICATION_ERRORS: dict[type[ApplicationError], tuple[int, str]] = {
     IdempotencyConflictError: (409, "idempotency_conflict"),
+    PaymentNotFoundError: (404, "payment_not_found"),
 }
 
 

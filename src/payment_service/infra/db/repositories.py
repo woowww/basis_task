@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +53,10 @@ class SqlPaymentRepository:
 
     def add(self, payment: Payment) -> None:
         self._session.add(_to_row(payment))
+
+    async def get(self, payment_id: uuid.UUID) -> Payment | None:
+        row = await self._session.get(PaymentModel, payment_id)
+        return _to_entity(row) if row is not None else None
 
     async def get_by_idempotency_key(self, idempotency_key: str) -> Payment | None:
         row = await self._session.scalar(

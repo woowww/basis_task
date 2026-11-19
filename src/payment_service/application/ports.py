@@ -1,3 +1,4 @@
+import uuid
 from typing import Protocol
 
 from payment_service.domain.payment import OutboxEvent, Payment
@@ -5,6 +6,8 @@ from payment_service.domain.payment import OutboxEvent, Payment
 
 class PaymentRepository(Protocol):
     def add(self, payment: Payment) -> None: ...
+
+    async def get(self, payment_id: uuid.UUID) -> Payment | None: ...
 
     async def get_by_idempotency_key(self, idempotency_key: str) -> Payment | None: ...
 
