@@ -1,6 +1,7 @@
 import uuid
+from collections.abc import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,6 +69,29 @@ class SqlPaymentRepository:
 class SqlOutboxRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def lock_unpublished(self, limit: int) -> list[OutboxEvent]:
+        rows = await self._session.scalars(
+            select(OutboxModel)
+            .where(OutboxModel.published_at.is_(None))
+            .order_by(OutboxModel.created_at, OutboxModel.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        return [
+            OutboxEvent(
+                id=row.id,
+                aggregate_id=row.aggregate_id,
+                event_type=row.event_type,
+                payload=row.payload,
+            )
+            for row in rows
+        ]
+
+    async def mark_published(self, event_ids: Sequence[uuid.UUID]) -> None:
+        await self._session.execute(
+            update(OutboxModel).where(OutboxModel.id.in_(event_ids)).values(published_at=func.now())
+        )
 
     def add(self, event: OutboxEvent) -> None:
         self._session.add(

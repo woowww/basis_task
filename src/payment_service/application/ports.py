@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from payment_service.domain.payment import OutboxEvent, Payment
@@ -14,6 +15,14 @@ class PaymentRepository(Protocol):
 
 class OutboxRepository(Protocol):
     def add(self, event: OutboxEvent) -> None: ...
+
+    async def lock_unpublished(self, limit: int) -> list[OutboxEvent]:
+        """Неопубликованные события в порядке создания, заблокированные до конца транзакции.
+
+        Строки, заблокированные другим relay, пропускаются (SKIP LOCKED).
+        """
+
+    async def mark_published(self, event_ids: Sequence[uuid.UUID]) -> None: ...
 
 
 class UnitOfWork(Protocol):

@@ -1,17 +1,13 @@
 """Топология и публикация — против настоящего RabbitMQ (свой vhost на воркер)."""
 
-import asyncio
 import json
 import uuid
-from collections.abc import AsyncIterator
 from typing import Any, cast
 
 import pytest
-from aio_pika.abc import AbstractIncomingMessage
 from faststream.rabbit import RabbitBroker
 
 from payment_service.domain.payment import OutboxEvent
-from payment_service.infra.broker.provider import create_broker
 from payment_service.infra.broker.publisher import RabbitMessagePublisher
 from payment_service.infra.broker.topology import (
     DEAD_LETTER_QUEUE,
@@ -20,52 +16,12 @@ from payment_service.infra.broker.topology import (
     retry_queue_name,
 )
 from tests.conftest import rabbitmq_management_client
-from tests.helpers import make_settings
-
-BASE_DELAY = 0.1  # с → TTL retry.1 = 100 мс, retry.2 = 200 мс
-
-
-@pytest.fixture
-async def topology(rabbitmq_url: str) -> Topology:
-    settings = make_settings().model_copy(
-        update={"rabbitmq_url": rabbitmq_url, "retry_base_delay_seconds": BASE_DELAY}
-    )
-    return Topology.from_settings(settings)
-
-
-@pytest.fixture
-async def broker(rabbitmq_url: str, topology: Topology) -> AsyncIterator[RabbitBroker]:
-    broker = create_broker(make_settings().model_copy(update={"rabbitmq_url": rabbitmq_url}))
-    await broker.connect()
-    await topology.declare(broker)
-    for queue in (topology.queue, *topology.retry_queues, topology.dead_letter_queue):
-        await (await broker.declare_queue(queue)).purge()
-    try:
-        yield broker
-    finally:
-        await broker.stop()
+from tests.helpers import receive
 
 
 @pytest.fixture
 def publisher(broker: RabbitBroker, topology: Topology) -> RabbitMessagePublisher:
     return RabbitMessagePublisher(broker, topology)
-
-
-async def receive(
-    broker: RabbitBroker, topology: Topology, name: str, within: float = 3.0
-) -> AbstractIncomingMessage:
-    queues = {
-        q.name: q for q in (topology.queue, *topology.retry_queues, topology.dead_letter_queue)
-    }
-    queue = await broker.declare_queue(queues[name])
-    deadline = asyncio.get_running_loop().time() + within
-    while True:
-        message = await queue.get(no_ack=True, fail=False)
-        if message is not None:
-            return message
-        if asyncio.get_running_loop().time() > deadline:
-            pytest.fail(f"no message in {name} within {within}s")
-        await asyncio.sleep(0.02)
 
 
 async def queue_info(rabbitmq_url: str, name: str) -> dict[str, Any]:
@@ -111,7 +67,7 @@ async def test_payment_event_lands_in_main_queue(
 
     await publisher.publish_payment_event(event)
 
-    message = await receive(broker, topology, QUEUE)
+    message = await receive(broker, topology.queue)
     assert json.loads(message.body) == {"payment_id": str(payment_id)}
     assert message.message_id == str(payment_id)
     assert message.headers["x-attempt"] == 1
@@ -131,7 +87,7 @@ async def test_retry_returns_to_main_queue_after_ttl(
         {"payment_id": message_id}, message_id=message_id, next_attempt=next_attempt
     )
 
-    message = await receive(broker, topology, QUEUE)
+    message = await receive(broker, topology.queue)
     assert message.message_id == message_id
     assert message.headers["x-attempt"] == next_attempt
     assert message.delivery_mode == 2
@@ -158,7 +114,7 @@ async def test_dead_letter_lands_in_dlq_with_reason(
         {"payment_id": message_id}, message_id=message_id, attempts=3, reason="webhook: 503"
     )
 
-    message = await receive(broker, topology, DEAD_LETTER_QUEUE)
+    message = await receive(broker, topology.dead_letter_queue)
     assert json.loads(message.body) == {"payment_id": message_id}
     assert message.headers["x-attempt"] == 3
     assert message.headers["x-death-reason"] == "webhook: 503"
@@ -171,18 +127,11 @@ async def test_rejected_message_falls_into_dlq(
     await publisher.publish_payment_event(
         OutboxEvent(aggregate_id=payment_id, event_type="payments.new", payload={})
     )
-    queue = await broker.declare_queue(topology.queue)
-    message = None
-    for _ in range(100):
-        message = await queue.get(fail=False)
-        if message is not None:
-            break
-        await asyncio.sleep(0.02)
-    assert message is not None
+    message = await receive(broker, topology.queue, no_ack=False)
 
     await message.reject(requeue=False)
 
-    dead = await receive(broker, topology, DEAD_LETTER_QUEUE)
+    dead = await receive(broker, topology.dead_letter_queue)
     assert dead.message_id == str(payment_id)
 
 

@@ -9,12 +9,15 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
+from faststream.rabbit import RabbitBroker
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import URL, make_url, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from payment_service.api.app import create_app
+from payment_service.infra.broker.provider import create_broker
+from payment_service.infra.broker.topology import Topology
 from payment_service.ioc import create_container
 from tests.helpers import make_settings
 
@@ -159,3 +162,27 @@ def rabbitmq_management_client() -> httpx.AsyncClient:
         auth=(management.username, management.password),
         timeout=10,
     )
+
+
+TEST_RETRY_BASE_DELAY = 0.1  # с → TTL retry.1 = 100 мс, retry.2 = 200 мс
+
+
+@pytest.fixture
+def topology(rabbitmq_url: str) -> Topology:
+    return Topology.from_settings(
+        make_settings().model_copy(update={"retry_base_delay_seconds": TEST_RETRY_BASE_DELAY})
+    )
+
+
+@pytest.fixture
+async def broker(rabbitmq_url: str, topology: Topology) -> AsyncIterator[RabbitBroker]:
+    """Подключённый брокер на тестовом vhost: топология объявлена, очереди пусты."""
+    broker = create_broker(make_settings().model_copy(update={"rabbitmq_url": rabbitmq_url}))
+    await broker.connect()
+    await topology.declare(broker)
+    for queue in (topology.queue, *topology.retry_queues, topology.dead_letter_queue):
+        await (await broker.declare_queue(queue)).purge()
+    try:
+        yield broker
+    finally:
+        await broker.stop()
