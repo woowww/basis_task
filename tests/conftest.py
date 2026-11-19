@@ -5,6 +5,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -17,6 +18,8 @@ from payment_service.api.app import create_app
 from payment_service.ioc import create_container
 from tests.helpers import make_settings
 
+DEFAULT_TEST_RABBITMQ_URL = "amqp://guest:guest@localhost:5672/"
+DEFAULT_TEST_RABBITMQ_MANAGEMENT_URL = "http://guest:guest@localhost:15672"
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://payments:payments@localhost:5432/payments"
 ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
 
@@ -114,3 +117,45 @@ async def db(migrated_db_url: str) -> AsyncIterator[AsyncEngine]:
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest.fixture(scope="session")
+async def rabbitmq_url(worker_id: str) -> AsyncIterator[str]:
+    """AMQP URL на отдельный vhost RabbitMQ (свой на прогон и xdist-воркер).
+
+    vhost создаётся через management API и удаляется вместе со всеми очередями в конце сессии.
+    """
+    amqp = httpx.URL(os.environ.get("TEST_RABBITMQ_URL", DEFAULT_TEST_RABBITMQ_URL))
+    vhost = f"test_{RUN_ID}_{worker_id}"
+
+    async with rabbitmq_management_client() as api:
+        try:
+            (await api.put(f"/api/vhosts/{vhost}")).raise_for_status()
+        except httpx.TransportError as exc:
+            pytest.exit(
+                f"RabbitMQ management API недоступен по {api.base_url}: {exc}\n"
+                "Запустите его: docker compose up -d rabbitmq",
+                returncode=1,
+            )
+        (
+            await api.put(
+                f"/api/permissions/{vhost}/{amqp.username}",
+                json={"configure": ".*", "write": ".*", "read": ".*"},
+            )
+        ).raise_for_status()
+        try:
+            yield str(amqp.copy_with(path=f"/{vhost}"))
+        finally:
+            await api.delete(f"/api/vhosts/{vhost}")
+
+
+def rabbitmq_management_client() -> httpx.AsyncClient:
+    """Клиент management API RabbitMQ (`/api/...`)."""
+    management = httpx.URL(
+        os.environ.get("TEST_RABBITMQ_MANAGEMENT_URL", DEFAULT_TEST_RABBITMQ_MANAGEMENT_URL)
+    )
+    return httpx.AsyncClient(
+        base_url=str(management.copy_with(username=None, password=None)),
+        auth=(management.username, management.password),
+        timeout=10,
+    )

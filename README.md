@@ -181,15 +181,20 @@ Content-Type: application/json
 
 ```bash
 uv sync
-docker compose up -d postgres   # PostgreSQL для тестов на localhost:5432
+docker compose up -d postgres rabbitmq   # PostgreSQL :5432, RabbitMQ :5672 / :15672
 uv run ruff check .
 uv run mypy
 uv run pytest            # или параллельно: uv run pytest -n auto
 ```
 
-Каждый прогон создаёт на этом сервере свежую базу `test_<run>_<worker>` (своя на каждый
-xdist-воркер) и удаляет её по завершении. Другой сервер — через `TEST_DATABASE_URL`
-(`postgresql+asyncpg://user:pass@host:port/db`), другой хост-порт compose — через `POSTGRES_PORT`.
+Тесты изолированы на уровне прогона и xdist-воркера: каждый создаёт свежую базу
+`test_<run>_<worker>_<n>` в PostgreSQL и отдельный vhost `test_<run>_<worker>` в RabbitMQ
+и удаляет их по завершении. Другие серверы — через `TEST_DATABASE_URL`, `TEST_RABBITMQ_URL`,
+`TEST_RABBITMQ_MANAGEMENT_URL`; другие хост-порты compose — через `POSTGRES_PORT`,
+`RABBITMQ_PORT`, `RABBITMQ_MANAGEMENT_PORT`.
+
+Аргументы очередей RabbitMQ неизменяемы: после смены `RETRY_BASE_DELAY_SECONDS` или
+`MAX_ATTEMPTS` удалите очереди `payments.new.retry.*` (или volume `rabbitmq-data`).
 
 ## Известные ограничения
 
