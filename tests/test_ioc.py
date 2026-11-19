@@ -3,14 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from payment_service.config import Settings
 from payment_service.ioc import create_container
-
-
-def make_settings(database_url: str = "postgresql+asyncpg://u:p@localhost/db") -> Settings:
-    return Settings(
-        api_key="secret",
-        database_url=database_url,
-        rabbitmq_url="amqp://guest:guest@localhost/",
-    )
+from tests.helpers import make_settings
 
 
 async def test_container_provides_given_settings() -> None:
@@ -27,6 +20,6 @@ async def test_container_provides_working_session(migrated_db_url: str) -> None:
     try:
         async with container() as request:
             session = await request.get(AsyncSession)
-            assert (await session.execute(text("SELECT count(*) FROM payments"))).scalar_one() == 0
+            assert (await session.execute(text("SELECT 1 FROM payments LIMIT 0"))).all() == []
     finally:
         await container.close()

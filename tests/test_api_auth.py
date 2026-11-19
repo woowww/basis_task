@@ -7,17 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from payment_service.api.app import create_app
 from payment_service.api.auth import protected_router, require_api_key
-from payment_service.config import Settings
-
-API_KEY = "test-api-key"
-
-
-def make_settings() -> Settings:
-    return Settings(
-        api_key=API_KEY,
-        database_url="postgresql+asyncpg://u:p@localhost/db",
-        rabbitmq_url="amqp://guest:guest@localhost/",
-    )
+from tests.helpers import API_KEY, make_settings
 
 
 @pytest.fixture

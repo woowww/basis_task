@@ -8,9 +8,14 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import URL, make_url, text
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+
+from payment_service.api.app import create_app
+from payment_service.ioc import create_container
+from tests.helpers import make_settings
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://payments:payments@localhost:5432/payments"
 ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
@@ -86,3 +91,26 @@ async def migrated_db_url(create_database: CreateDatabase) -> str:
     url = await create_database()
     await run_alembic(url, "upgrade", "head")
     return url
+
+
+@pytest.fixture
+async def api_client(migrated_db_url: str) -> AsyncIterator[AsyncClient]:
+    """HTTP-клиент к приложению с реальной БД (миграции применены)."""
+    settings = make_settings(migrated_db_url)
+    container = create_container(settings)
+    app = create_app(settings, container)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client
+    finally:
+        await container.close()
+
+
+@pytest.fixture
+async def db(migrated_db_url: str) -> AsyncIterator[AsyncEngine]:
+    """Engine для проверки состояния БД в тестах."""
+    engine = create_async_engine(migrated_db_url)
+    try:
+        yield engine
+    finally:
+        await engine.dispose()

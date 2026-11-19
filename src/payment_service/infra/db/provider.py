@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from payment_service.application.ports import OutboxRepository, PaymentRepository, UnitOfWork
 from payment_service.config import Settings
+from payment_service.infra.db.repositories import (
+    SqlOutboxRepository,
+    SqlPaymentRepository,
+    SqlUnitOfWork,
+)
 
 
 class DbProvider(Provider):
@@ -28,3 +34,7 @@ class DbProvider(Provider):
     ) -> AsyncIterable[AsyncSession]:
         async with factory() as session:
             yield session
+
+    payments = provide(SqlPaymentRepository, provides=PaymentRepository, scope=Scope.REQUEST)
+    outbox = provide(SqlOutboxRepository, provides=OutboxRepository, scope=Scope.REQUEST)
+    uow = provide(SqlUnitOfWork, provides=UnitOfWork, scope=Scope.REQUEST)

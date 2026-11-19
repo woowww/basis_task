@@ -1,0 +1,35 @@
+import uuid
+from datetime import datetime
+from decimal import Decimal
+from typing import Annotated, Any
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+from payment_service.domain.payment import Currency, PaymentStatus
+
+Amount = Annotated[
+    Decimal,
+    Field(
+        gt=0,
+        max_digits=18,
+        decimal_places=2,
+        description="Сумма: положительное число, не более 2 знаков после запятой",
+        examples=["1500.00"],
+    ),
+]
+
+
+class CreatePaymentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Amount
+    currency: Currency
+    description: str = Field(min_length=1, max_length=1000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    webhook_url: HttpUrl
+
+
+class CreatePaymentResponse(BaseModel):
+    payment_id: uuid.UUID
+    status: PaymentStatus
+    created_at: datetime
