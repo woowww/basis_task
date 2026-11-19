@@ -20,7 +20,14 @@ from payment_service.infra.db.repositories import (
 class DbProvider(Provider):
     @provide(scope=Scope.APP)
     async def engine(self, settings: Settings) -> AsyncIterable[AsyncEngine]:
-        engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+        # Consumer держит соединение на время вызова шлюза (строка платежа заблокирована),
+        # поэтому пул должен вмещать CONSUMER_PREFETCH параллельных обработок.
+        engine = create_async_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            pool_size=max(5, settings.consumer_prefetch),
+            max_overflow=10,
+        )
         yield engine
         await engine.dispose()
 

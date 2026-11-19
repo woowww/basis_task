@@ -1,3 +1,24 @@
+x-app: &app
+  build: .
+  image: payment-service:local
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment: &app-env
+    API_KEY: ${API_KEY:-change-me}
+    DATABASE_URL: postgresql+asyncpg://payments:payments@postgres:5432/payments
+    RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+  stop_grace_period: 20s
+
+x-app-depends: &app-depends
+  postgres:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -27,6 +48,45 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command:
+      [
+        "uvicorn", "--factory", "payment_service.api.app:create_app",
+        "--host", "0.0.0.0", "--port", "8000",
+      ]
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on: *app-depends
+    healthcheck:
+      test:
+        [
+          "CMD", "python", "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json', timeout=2)",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  outbox-relay:
+    <<: *app
+    command: ["python", "-m", "payment_service.relay"]
+    depends_on: *app-depends
+
+  consumer:
+    <<: *app
+    command:
+      ["faststream", "run", "--factory", "payment_service.consumer.main:create_app"]
+    depends_on: *app-depends
 
 volumes:
   postgres-data:

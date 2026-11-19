@@ -1,5 +1,6 @@
 """Единый формат ошибок API: `{"error": {"code", "message", "details"}}`."""
 
+import logging
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any
@@ -16,6 +17,8 @@ from payment_service.application.errors import (
     IdempotencyConflictError,
     PaymentNotFoundError,
 )
+
+logger = logging.getLogger(__name__)
 
 # Прикладная ошибка → (HTTP-статус, код ошибки).
 APPLICATION_ERRORS: dict[type[ApplicationError], tuple[int, str]] = {
@@ -72,11 +75,16 @@ async def _api_error_handler(_: Request, exc: Exception) -> JSONResponse:
     return error_response(exc.status_code, exc.code, exc.message, exc.details)
 
 
-async def _application_error_handler(_: Request, exc: Exception) -> JSONResponse:
+async def _application_error_handler(request: Request, exc: Exception) -> JSONResponse:
     for exc_type, (status_code, code) in APPLICATION_ERRORS.items():
         if isinstance(exc, exc_type):
             return error_response(status_code, code, str(exc))
-    raise exc  # не сопоставленная ошибка — 500 через стандартный обработчик
+    return await _unhandled_error_handler(request, exc)
+
+
+async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    return error_response(500, "internal_error", "Internal server error")
 
 
 async def _http_exception_handler(_: Request, exc: Exception) -> JSONResponse:
@@ -102,3 +110,4 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApplicationError, _application_error_handler)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
+    app.add_exception_handler(Exception, _unhandled_error_handler)

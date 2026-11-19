@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from dishka import AsyncContainer, Provider
 from dishka_faststream import setup_dishka
-from faststream import FastStream
+from faststream import AckPolicy, FastStream
 from faststream.rabbit import RabbitBroker
 
 from payment_service.config import Settings, get_settings
@@ -27,7 +27,10 @@ def create_consumer(settings: Settings, *extra: Provider) -> Consumer:
     container = create_container(settings, *extra, broker=broker)
     topology = Topology.from_settings(settings)
 
-    broker.subscriber(topology.queue, topology.exchange)(handle_payment_created)
+    # Необработанное исключение → reject без requeue → DLX основной очереди → DLQ.
+    broker.subscriber(topology.queue, topology.exchange, ack_policy=AckPolicy.REJECT_ON_ERROR)(
+        handle_payment_created
+    )
 
     app = FastStream(broker)
 

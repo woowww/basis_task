@@ -89,7 +89,3 @@ class Topology:
         for queue, target in bindings:
             declared = await broker.declare_queue(queue)
             await declared.bind(target, routing_key=queue.routing())
-
-    async def declare_exchange(self, broker: RabbitBroker) -> None:
-        """Только основной обменник — достаточно для публикующей стороны (relay)."""
-        await broker.declare_exchange(self.exchange)

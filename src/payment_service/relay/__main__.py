@@ -22,7 +22,8 @@ async def main() -> None:
     container = create_container(settings, broker=broker)
     await broker.connect()
     try:
-        await (await container.get(Topology)).declare_exchange(broker)
+        # Полная топология (идемпотентно): публикация не зависит от того, стартовал ли consumer.
+        await (await container.get(Topology)).declare(broker)
         await run_relay(container, settings, stop)
     finally:
         await container.close()
