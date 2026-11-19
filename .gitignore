@@ -1,0 +1,32 @@
+# Локальные документы (ТЗ, спека, план) — не коммитим
+docs/
+task.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Окружение
+.venv/
+.env
+.env.*
+!.env.example
+
+# Инструменты
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Claude Code (локальные настройки)
+.claude/settings.local.json

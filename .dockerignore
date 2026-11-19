@@ -1,0 +1,37 @@
+.git
+.gitignore
+.dockerignore
+
+# Документы и локальные файлы
+docs/
+task.md
+README.md
+.claude/
+
+# Окружение и секреты
+.venv/
+.env
+.env.*
+
+# Кэши и артефакты
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Docker
+Dockerfile
+docker-compose*.yml
+compose*.yml
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
