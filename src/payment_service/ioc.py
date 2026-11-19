@@ -13,6 +13,7 @@ from payment_service.application.provider import UseCaseProvider
 from payment_service.config import Settings
 from payment_service.infra.broker.provider import BrokerProvider
 from payment_service.infra.db.provider import DbProvider
+from payment_service.infra.external_provider import ExternalServicesProvider
 
 
 class ConfigProvider(Provider):
@@ -34,6 +35,7 @@ def create_container(
         ConfigProvider(),
         DbProvider(),
         BrokerProvider(),
+        ExternalServicesProvider(),
         UseCaseProvider(),
         *extra,
         context=context,

@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any, Protocol
 
-from payment_service.domain.payment import OutboxEvent, Payment
+from payment_service.domain.payment import OutboxEvent, Payment, PaymentStatus
 
 
 class PaymentRepository(Protocol):
@@ -49,3 +49,17 @@ class MessagePublisher(Protocol):
         self, payload: dict[str, Any], *, message_id: str, attempts: int, reason: str
     ) -> None:
         """Отправить окончательно не обработанное сообщение в DLQ."""
+
+
+class PaymentGateway(Protocol):
+    async def process(self, payment: Payment) -> PaymentStatus:
+        """Провести платёж во внешнем шлюзе: `SUCCEEDED` или `FAILED` (бизнес-исход)."""
+
+
+class WebhookSender(Protocol):
+    async def send(self, url: str, payload: dict[str, Any]) -> None:
+        """Доставить уведомление.
+
+        Raises:
+            WebhookDeliveryError: ответ не 2xx, таймаут или сетевая ошибка.
+        """

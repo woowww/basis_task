@@ -21,3 +21,7 @@ class PaymentNotFoundError(ApplicationError):
 
 class IdempotencyKeyTakenError(ApplicationError):
     """Порт сообщает: коммит не прошёл, ключ уже занят параллельным запросом."""
+
+
+class WebhookDeliveryError(ApplicationError):
+    """Webhook не доставлен: ответ не 2xx, таймаут или сетевая ошибка (техническая ошибка)."""
