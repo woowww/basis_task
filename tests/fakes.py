@@ -15,12 +15,15 @@ class FakeGateway:
     ) -> None:
         self.outcome = outcome
         self.delay = delay
+        self.error: Exception | None = None
         self.calls: list[uuid.UUID] = []
 
     async def process(self, payment: Payment) -> PaymentStatus:
         self.calls.append(payment.id)
         if self.delay:
             await asyncio.sleep(self.delay)
+        if self.error is not None:
+            raise self.error
         return self.outcome
 
 

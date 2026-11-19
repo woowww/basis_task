@@ -52,9 +52,18 @@ class MessagePublisher(Protocol):
         """Отложить сообщение до попытки `next_attempt` (экспоненциальная задержка)."""
 
     async def publish_dead_letter(
-        self, payload: dict[str, Any], *, message_id: str, attempts: int, reason: str
+        self,
+        payload: dict[str, Any] | bytes,
+        *,
+        message_id: str,
+        attempts: int,
+        reason: str,
+        content_type: str | None = None,
     ) -> None:
-        """Отправить окончательно не обработанное сообщение в DLQ."""
+        """Отправить окончательно не обработанное сообщение в DLQ.
+
+        `bytes` публикуются как есть (исходное тело битого сообщения сохраняется).
+        """
 
 
 class PaymentGateway(Protocol):

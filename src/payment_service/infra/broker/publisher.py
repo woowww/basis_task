@@ -48,10 +48,17 @@ class RabbitMessagePublisher:
         )
 
     async def publish_dead_letter(
-        self, payload: dict[str, Any], *, message_id: str, attempts: int, reason: str
+        self,
+        payload: dict[str, Any] | bytes,
+        *,
+        message_id: str,
+        attempts: int,
+        reason: str,
+        content_type: str | None = None,
     ) -> None:
         await self._broker.publish(
             payload,
+            content_type=content_type,
             exchange=self._topology.dead_letter_exchange,
             routing_key=ROUTING_KEY,
             message_id=message_id,
