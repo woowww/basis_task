@@ -7,6 +7,7 @@
 from dishka import AsyncContainer, Provider, Scope, from_context, make_async_container
 
 from payment_service.config import Settings
+from payment_service.infra.db.provider import DbProvider
 
 
 class ConfigProvider(Provider):
@@ -18,4 +19,6 @@ def create_container(settings: Settings, *extra: Provider) -> AsyncContainer:
 
     `extra` — дополнительные или подменяющие провайдеры (например, фейки в тестах).
     """
-    return make_async_container(ConfigProvider(), *extra, context={Settings: settings})
+    return make_async_container(
+        ConfigProvider(), DbProvider(), *extra, context={Settings: settings}
+    )

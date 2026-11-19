@@ -1,44 +1,88 @@
+import asyncio
+import itertools
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 
 import pytest
-from sqlalchemy import make_url, text
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import URL, make_url, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://payments:payments@localhost:5432/payments"
+ALEMBIC_INI = Path(__file__).resolve().parent.parent / "alembic.ini"
 
 # Один идентификатор на запуск pytest: у всех xdist-воркеров он общий (передаётся через env
 # контроллера), поэтому базы одного прогона легко опознать, а параллельные прогоны не пересекаются.
 RUN_ID = os.environ.setdefault("PAYMENTS_TEST_RUN_ID", uuid.uuid4().hex[:8])
 
+CreateDatabase = Callable[[], Awaitable[str]]
+
+
+def _server_url() -> URL:
+    return make_url(os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL))
+
+
+def alembic_config(database_url: str) -> Config:
+    config = Config(str(ALEMBIC_INI))
+    config.attributes["database_url"] = database_url
+    config.attributes["configure_logger"] = False
+    return config
+
+
+async def run_alembic(database_url: str, cmd: str, revision: str) -> None:
+    """`alembic upgrade|downgrade <revision>`; в потоке — env.py сам запускает event loop."""
+    fn = {"upgrade": command.upgrade, "downgrade": command.downgrade}[cmd]
+    await asyncio.to_thread(fn, alembic_config(database_url), revision)
+
 
 @pytest.fixture(scope="session")
-async def postgres_url(worker_id: str) -> AsyncIterator[str]:
-    """DSN свежей пустой базы на тестовую сессию (своя база на каждый xdist-воркер).
+async def create_database(worker_id: str) -> AsyncIterator[CreateDatabase]:
+    """Фабрика свежих пустых баз на сервере из `TEST_DATABASE_URL`.
 
-    Сервер берётся из `TEST_DATABASE_URL` (по умолчанию — postgres из docker-compose).
-    База создаётся при старте сессии и удаляется в конце.
+    Имена `test_<run>_<worker>_<n>` уникальны для прогона и xdist-воркера.
+    Все созданные базы удаляются в конце сессии.
     """
-    server_url = make_url(os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL))
-    db_name = f"test_{RUN_ID}_{worker_id}"
-
+    server_url = _server_url()
     admin = create_async_engine(server_url, isolation_level="AUTOCOMMIT")
-    try:
-        async with admin.connect() as conn:
-            await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-    except OperationalError as exc:
-        await admin.dispose()
-        pytest.exit(
-            f"PostgreSQL недоступен по {server_url.render_as_string(hide_password=True)}: {exc}\n"
-            "Запустите его: docker compose up -d postgres",
-            returncode=1,
-        )
+    counter = itertools.count()
+    created: list[str] = []
+
+    async def create() -> str:
+        name = f"test_{RUN_ID}_{worker_id}_{next(counter)}"
+        try:
+            async with admin.connect() as conn:
+                await conn.execute(text(f'CREATE DATABASE "{name}"'))
+        except OperationalError as exc:
+            pytest.exit(
+                f"PostgreSQL недоступен по {server_url.render_as_string(hide_password=True)}: "
+                f"{exc}\nЗапустите его: docker compose up -d postgres",
+                returncode=1,
+            )
+        created.append(name)
+        return server_url.set(database=name).render_as_string(hide_password=False)
 
     try:
-        yield server_url.set(database=db_name).render_as_string(hide_password=False)
+        yield create
     finally:
         async with admin.connect() as conn:
-            await conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)'))
+            for name in created:
+                await conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
         await admin.dispose()
+
+
+@pytest.fixture(scope="session")
+async def postgres_url(create_database: CreateDatabase) -> str:
+    """Пустая база (без схемы) на тестовую сессию."""
+    return await create_database()
+
+
+@pytest.fixture(scope="session")
+async def migrated_db_url(create_database: CreateDatabase) -> str:
+    """База с применёнными миграциями (`alembic upgrade head`) на тестовую сессию."""
+    url = await create_database()
+    await run_alembic(url, "upgrade", "head")
+    return url
